@@ -1,7 +1,7 @@
 # fivem-greenscreener
 
-A small script that allows you to take screenshots of every gta clothing, prop/object or vehicle against a greenscreen.
-You can use them for example in your inventory, clothing store or vehicle store.
+A small script that allows you to take screenshots of every GTA clothing, prop/object, vehicle or weapon against a greenscreen.
+You can use them for example in your inventory, clothing store, vehicle store or weapon shop.
 
 ## Using the images
 
@@ -13,6 +13,8 @@ For commercial usage, please reach out to me on Discord to discuss the condition
 - Capture screenshots of every GTA clothing item, including addon clothing
 - Capture screenshots of all objects and props in GTA, including addon props
 - Capture screenshots of every vehicle in GTA, including addon vehicles
+- **Capture screenshots of all GTA weapons as standalone props** (109 weapons, saved as `weapon_pistol.png` etc.)
+- **Capture screenshots of weapon accessories/attachments** — ped holding the weapon with each component applied, side-profile camera
 - Screenshots are labeled comprehensively for seamless integration into your scripts
 - Minimalistic progress UI for user convenience
 - Almost completely invisible ped
@@ -70,6 +72,28 @@ Example Usage:
 `/screenshotvehicle all 1 1`
 
 `/screenshotvehicle zentorno 1 1`
+
+### Screenshot weapons
+
+Capture screenshots of weapons as standalone props (saved to `images/weapons/`).
+
+`/screenshotweapons all` — screenshots all 109 weapons defined in `config.json`
+
+`/screenshotweapons weapon_pistol` — screenshots a single weapon
+
+Images are named after the weapon (e.g. `weapon_pistol.png`).
+The prop rotation is configurable via `greenScreenWeaponRotation` in `config.json`.
+
+### Screenshot weapon accessories
+
+Capture screenshots of each weapon accessory/attachment with the ped holding the weapon (saved to `images/weapon_components/{weapon_name}/`).
+
+`/screenshotweaponcomponents all` — iterates every weapon + every component defined in `config.json`
+
+`/screenshotweaponcomponents weapon_pistol` — only the accessories for that weapon
+
+Images are named after the component (e.g. `COMPONENT_AT_PI_SUPP.png`).
+The side-profile camera is configurable via `weaponComponentCameraSettings` (`fov`, `zOffset`, `distance`) in `config.json`.
 
 ## Examples
 

@@ -16,7 +16,8 @@ try {
 	onNet('takeScreenshot', async (filename, type) => {
 		const savePath = `${mainSavePath}/${type}`;
 		if (!fs.existsSync(savePath)) {
-			fs.mkdirSync(savePath);
+			// recursive: le "type" peut désormais être un sous-dossier (ex: tshirt/f)
+			fs.mkdirSync(savePath, { recursive: true });
 		}
 
 		const fullFilePath = savePath + "/" + filename + ".png";
@@ -60,22 +61,39 @@ try {
 				}
 
 				// Cop image
+				// On compte les pixels opaques par colonne et par ligne plutôt que
+				// de prendre le min/max absolu: un seul pixel parasite (résidu du
+				// chroma key sur un bord) suffirait sinon à étirer la zone de
+				// recadrage et à décaler le sujet. On ignore donc les colonnes/lignes
+				// qui ont moins de `minOpaque` pixels opaques (considérées comme bruit).
+				const minOpaque = 3;
+				const colCounts = new Array(image.width).fill(0);
+				const rowCounts = new Array(image.height).fill(0);
+
+				for (let x = 0; x < image.width; x++) {
+					for (let y = 0; y < image.height; y++) {
+						if (image.getPixelXY(x, y)[3] > 0) {
+							colCounts[x]++;
+							rowCounts[y]++;
+						}
+					}
+				}
+
 				let minX = image.width;
 				let maxX = -1;
 				let minY = image.height;
 				let maxY = -1;
 
 				for (let x = 0; x < image.width; x++) {
-					for (let y = 0; y < image.height; y++) {
-						const pixelArr = image.getPixelXY(x, y);
-						const alpha = pixelArr[3];
-
-						if (alpha > 0) {
-							minX = Math.min(minX, x);
-							maxX = Math.max(maxX, x);
-							minY = Math.min(minY, y);
-							maxY = Math.max(maxY, y);
-						}
+					if (colCounts[x] >= minOpaque) {
+						minX = Math.min(minX, x);
+						maxX = Math.max(maxX, x);
+					}
+				}
+				for (let y = 0; y < image.height; y++) {
+					if (rowCounts[y] >= minOpaque) {
+						minY = Math.min(minY, y);
+						maxY = Math.max(maxY, y);
 					}
 				}
 

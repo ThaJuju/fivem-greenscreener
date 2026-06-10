@@ -3,7 +3,7 @@ game 'gta5'
 
 author 'Ben'
 description 'fivem-greenscreener'
-version '1.6.5'
+version '1.6.6'
 
 this_is_a_map 'yes'
 

@@ -8,6 +8,7 @@ let cam;
 let camInfo;
 let ped;
 let interval;
+let hudHideTick = null;
 const playerId = PlayerId();
 let QBCore = null;
 
@@ -15,8 +16,36 @@ if (config.useQBVehicles) {
 	QBCore = exports[config.coreResourceName].GetCoreObject();
 }
 
+// Mapping des composants/props GTA vers l'arborescence d'icônes de la ressource "clothes"
+// (cf. clothes/cfg.lua -> Config.ClothingComponents / Config.AccessoryComponents et
+//  clothes/web/script.js -> icons/${category}/${sex}/${drawable}.png)
+const clothesClothingFolders = {
+	1: 'mask',    // Masque
+	3: 'arms',    // Bras
+	4: 'pants',   // Pantalon
+	5: 'bags',    // Sac
+	6: 'shoes',   // Chaussures
+	7: 'chain',   // Chaîne / Accessoire
+	8: 'tshirt',  // T-Shirt
+	9: 'bproof',  // Gilet
+	10: 'sticker', // Sticker
+	11: 'torso',  // Haut / Veste
+};
+const clothesPropFolders = {
+	0: 'hat',       // Chapeau
+	1: 'glasses',   // Lunettes
+	2: 'ears',      // Oreilles
+	6: 'watches',   // Montres
+	7: 'bracelets', // Bracelets
+};
+
 async function takeScreenshotForComponent(pedType, type, component, drawable, texture, cameraSettings) {
-	const cameraInfo = cameraSettings ? cameraSettings : config.cameraSettings[type][component];
+	const cameraInfo = cameraSettings ? cameraSettings : config.cameraSettings?.[type]?.[component];
+
+	if (!cameraInfo) {
+		console.warn(`[greenscreener] No camera settings for ${type} component ${component}, skipping.`);
+		return;
+	}
 
 	setWeatherTime();
 
@@ -56,12 +85,20 @@ async function takeScreenshotForComponent(pedType, type, component, drawable, te
 
 	SetEntityRotation(ped, camInfo.rotation.x, camInfo.rotation.y, camInfo.rotation.z, 2, false);
 
-	emitNet('takeScreenshot', `${pedType}_${type == 'PROPS' ? 'prop_' : ''}${component}_${drawable}${texture ? `_${texture}`: ''}`, 'clothing');
+	// Sortie au format attendu par la ressource "clothes": <category>/<sex>/<drawable>.png
+	const sex = pedType === 'male' ? 'm' : 'f';
+	const folder = type === 'PROPS' ? clothesPropFolders[component] : clothesClothingFolders[component];
+	if (folder) {
+		emitNet('takeScreenshot', `${drawable}${texture ? `_${texture}` : ''}`, `${folder}/${sex}`);
+	} else {
+		// Composant non mappé: on garde l'ancien nommage à plat
+		emitNet('takeScreenshot', `${pedType}_${type == 'PROPS' ? 'prop_' : ''}${component}_${drawable}${texture ? `_${texture}`: ''}`, 'clothing');
+	}
 	await Delay(2000);
 	return;
 }
 
-async function takeScreenshotForObject(object, hash) {
+async function takeScreenshotForObject(object, hash, folder = 'objects', filename = null) {
 
 	setWeatherTime();
 
@@ -97,8 +134,6 @@ async function takeScreenshotForObject(object, hash) {
 		z: center.z + fwdZ,
 	};
 
-	console.log(modelSize.x, modelSize.z)
-
 	cam = CreateCamWithParams('DEFAULT_SCRIPTED_CAMERA', fwdPos.x, fwdPos.y, fwdPos.z, 0, 0, 0, fov, true, 0);
 
 	PointCamAtCoord(cam, center.x, center.y, center.z);
@@ -107,12 +142,54 @@ async function takeScreenshotForObject(object, hash) {
 
 	await Delay(50);
 
-	emitNet('takeScreenshot', `${hash}`, 'objects');
+	emitNet('takeScreenshot', filename ?? `${hash}`, folder);
 
 	await Delay(2000);
 
 	return;
 
+}
+
+async function takeScreenshotForWeaponComponent(pedRef, weaponName, componentName) {
+	setWeatherTime();
+
+	await Delay(500);
+
+	if (cam) {
+		DestroyAllCams(true);
+		DestroyCam(cam, true);
+		cam = null;
+	}
+
+	const settings = config.weaponComponentCameraSettings ?? {};
+	const fov = settings.fov ?? 45;
+	const zOffset = settings.zOffset ?? 0.65;
+	const dist = settings.distance ?? 1.3;
+
+	const [pedX, pedY, pedZ] = GetEntityCoords(pedRef);
+	const [fwdX, fwdY] = GetEntityForwardVector(pedRef);
+
+	// Camera to the ped's right (90° clockwise from forward)
+	const rightX = fwdY;
+	const rightY = -fwdX;
+
+	cam = CreateCamWithParams(
+		'DEFAULT_SCRIPTED_CAMERA',
+		pedX + rightX * dist,
+		pedY + rightY * dist,
+		pedZ + zOffset,
+		0, 0, 0, fov, true, 0
+	);
+
+	PointCamAtCoord(cam, pedX + fwdX * 0.35, pedY + fwdY * 0.35, pedZ + zOffset);
+	SetCamActive(cam, true);
+	RenderScriptCams(true, false, 0, true, false, 0);
+
+	await Delay(50);
+
+	emitNet('takeScreenshot', componentName, `weapon_components/${weaponName}`);
+
+	await Delay(2000);
 }
 
 async function takeScreenshotForVehicle(vehicle, hash, model) {
@@ -201,6 +278,32 @@ async function ResetPedComponents() {
 	ClearAllPedProps();
 
 	return;
+}
+
+// Masque le HUD/radar pendant la capture: sans ça, la boussole ("N") et la
+// minimap restent visibles dans le screenshot et faussent le recadrage côté
+// serveur (la boîte englobante non-transparente inclut ces éléments du coin
+// bas-gauche), ce qui décale le sujet dans un coin de l'image.
+function startHidingHud() {
+	DisplayRadar(false);
+	if (hudHideTick === null) {
+		hudHideTick = setTick(() => {
+			HideHudAndRadarThisFrame();
+			// Le fil de notifications ("the feed") est un Scaleform séparé que
+			// HideHudAndRadarThisFrame ne couvre pas: une notif (paycheck, etc.)
+			// qui apparaît en plein run réélargit la boîte englobante côté serveur
+			// et décale le sujet. On le masque donc explicitement chaque frame.
+			ThefeedHideThisFrame();
+		});
+	}
+}
+
+function stopHidingHud() {
+	if (hudHideTick !== null) {
+		clearTick(hudHideTick);
+		hudHideTick = null;
+	}
+	DisplayRadar(true);
 }
 
 function setWeatherTime() {
@@ -302,7 +405,15 @@ function createGreenScreenVehicle(vehicleHash, vehicleModel) {
 
 
 RegisterCommand('screenshot', async (source, args) => {
-	const modelHashes = [GetHashKey('mp_m_freemode_01'), GetHashKey('mp_f_freemode_01')];
+	const gender = args[0]?.toLowerCase();
+	let modelHashes;
+	if (gender === 'male') {
+		modelHashes = [GetHashKey('mp_m_freemode_01')];
+	} else if (gender === 'female') {
+		modelHashes = [GetHashKey('mp_f_freemode_01')];
+	} else {
+		modelHashes = [GetHashKey('mp_m_freemode_01'), GetHashKey('mp_f_freemode_01')];
+	}
 
 	SendNUIMessage({
 		start: true,
@@ -311,6 +422,7 @@ RegisterCommand('screenshot', async (source, args) => {
 	if (!stopWeatherResource()) return;
 
 	DisableIdleCamera(true);
+	startHidingHud();
 
 
 	await Delay(100);
@@ -353,7 +465,7 @@ RegisterCommand('screenshot', async (source, args) => {
 						for (let drawable = 0; drawable < drawableVariationCount; drawable++) {
 							const textureVariationCount = GetNumberOfPedTextureVariations(ped, component, drawable);
 							SendNUIMessage({
-								type: config.cameraSettings[type][component].name,
+								type: config.cameraSettings[type][component]?.name ?? `Component ${component}`,
 								value: drawable,
 								max: drawableVariationCount,
 							});
@@ -372,7 +484,7 @@ RegisterCommand('screenshot', async (source, args) => {
 						for (let prop = 0; prop < propVariationCount; prop++) {
 							const textureVariationCount = GetNumberOfPedPropTextureVariations(ped, component, prop);
 							SendNUIMessage({
-								type: config.cameraSettings[type][component].name,
+								type: config.cameraSettings[type][component]?.name ?? `Component ${component}`,
 								value: prop,
 								max: propVariationCount,
 							});
@@ -404,6 +516,7 @@ RegisterCommand('screenshot', async (source, args) => {
 	DestroyAllCams(true);
 	DestroyCam(cam, true);
 	RenderScriptCams(false, false, 0, true, false, 0);
+	stopHidingHud();
 	camInfo = null;
 	cam = null;
 });
@@ -429,7 +542,7 @@ RegisterCommand('customscreenshot', async (source, args) => {
 	}
 
 	if (args[4] != null) {
-		let cameraSettings = ''
+		cameraSettings = ''
 		for (let i = 4; i < args.length; i++) {
 			cameraSettings += args[i] + ' ';
 		}
@@ -441,6 +554,7 @@ RegisterCommand('customscreenshot', async (source, args) => {
 	if (!stopWeatherResource()) return;
 
 	DisableIdleCamera(true);
+	startHidingHud();
 
 
 	await Delay(100);
@@ -485,7 +599,7 @@ RegisterCommand('customscreenshot', async (source, args) => {
 					for (drawable = 0; drawable < drawableVariationCount; drawable++) {
 						const textureVariationCount = GetNumberOfPedTextureVariations(ped, component, drawable);
 						SendNUIMessage({
-							type: config.cameraSettings[type][component].name,
+							type: config.cameraSettings[type][component]?.name ?? `Component ${component}`,
 							value: drawable,
 							max: drawableVariationCount,
 						});
@@ -504,7 +618,7 @@ RegisterCommand('customscreenshot', async (source, args) => {
 					for (prop = 0; prop < propVariationCount; prop++) {
 						const textureVariationCount = GetNumberOfPedPropTextureVariations(ped, component, prop);
 						SendNUIMessage({
-							type: config.cameraSettings[type][component].name,
+							type: config.cameraSettings[type][component]?.name ?? `Component ${component}`,
 							value: prop,
 							max: propVariationCount,
 						});
@@ -560,6 +674,7 @@ RegisterCommand('customscreenshot', async (source, args) => {
 	DestroyAllCams(true);
 	DestroyCam(cam, true);
 	RenderScriptCams(false, false, 0, true, false, 0);
+	stopHidingHud();
 	camInfo = null;
 	cam = null;
 });
@@ -575,6 +690,7 @@ RegisterCommand('screenshotobject', async (source, args) => {
 	if (!stopWeatherResource()) return;
 
 	DisableIdleCamera(true);
+	startHidingHud();
 
 
 	await Delay(100);
@@ -616,6 +732,7 @@ RegisterCommand('screenshotobject', async (source, args) => {
 	DestroyAllCams(true);
 	DestroyCam(cam, true);
 	RenderScriptCams(false, false, 0, true, false, 0);
+	stopHidingHud();
 	cam = null;
 });
 
@@ -630,6 +747,7 @@ RegisterCommand('screenshotvehicle', async (source, args) => {
 
 
 	DisableIdleCamera(true);
+	startHidingHud();
 	SetEntityCoords(ped, config.greenScreenHiddenSpot.x, config.greenScreenHiddenSpot.y, config.greenScreenHiddenSpot.z, false, false, false);
 	SetPlayerControl(playerId, false);
 
@@ -729,10 +847,143 @@ RegisterCommand('screenshotvehicle', async (source, args) => {
 	DestroyAllCams(true);
 	DestroyCam(cam, true);
 	RenderScriptCams(false, false, 0, true, false, 0);
+	stopHidingHud();
 	cam = null;
 });
 
 
+
+RegisterCommand('screenshotweapons', async (source, args) => {
+	const target = args[0]?.toLowerCase() ?? 'all';
+	const weapons = target === 'all' ? config.weapons : [target];
+
+	if (!stopWeatherResource()) return;
+
+	DisableIdleCamera(true);
+	startHidingHud();
+
+	const localPed = GetPlayerPed(-1);
+	SetEntityCoords(localPed, config.greenScreenHiddenSpot.x, config.greenScreenHiddenSpot.y, config.greenScreenHiddenSpot.z, false, false, false);
+	SetPlayerControl(playerId, false);
+
+	if (weapons.length > 1) SendNUIMessage({ start: true });
+
+	await Delay(100);
+
+	for (let i = 0; i < weapons.length; i++) {
+		const weaponName = weapons[i];
+		const weaponHash = GetHashKey(weaponName);
+
+		if (!IsWeaponValid(weaponHash)) continue;
+
+		const modelHash = GetWeapontypeModel(weaponHash);
+		if (!IsModelValid(modelHash)) continue;
+
+		if (weapons.length > 1) {
+			SendNUIMessage({ type: weaponName, value: i + 1, max: weapons.length });
+		}
+
+		if (!HasModelLoaded(modelHash)) {
+			RequestModel(modelHash);
+			while (!HasModelLoaded(modelHash)) await Delay(100);
+		}
+
+		const rot = config.greenScreenWeaponRotation ?? config.greenScreenRotation;
+		const object = CreateObjectNoOffset(modelHash, config.greenScreenPosition.x, config.greenScreenPosition.y, config.greenScreenPosition.z, false, true, true);
+		SetEntityRotation(object, rot.x, rot.y, rot.z, 0, false);
+		FreezeEntityPosition(object, true);
+
+		await Delay(50);
+		await takeScreenshotForObject(object, modelHash, 'weapons', weaponName);
+
+		DeleteEntity(object);
+		SetModelAsNoLongerNeeded(modelHash);
+	}
+
+	if (weapons.length > 1) SendNUIMessage({ end: true });
+
+	SetPlayerControl(playerId, true);
+	startWeatherResource();
+	DestroyAllCams(true);
+	DestroyCam(cam, true);
+	RenderScriptCams(false, false, 0, true, false, 0);
+	stopHidingHud();
+	cam = null;
+});
+
+RegisterCommand('screenshotweaponcomponents', async (source, args) => {
+	const target = args[0]?.toLowerCase() ?? 'all';
+	const weaponComponents = config.weaponComponents ?? {};
+	const weaponNames = target === 'all' ? Object.keys(weaponComponents) : [target];
+
+	if (!stopWeatherResource()) return;
+
+	DisableIdleCamera(true);
+	startHidingHud();
+
+	const modelHash = GetHashKey('mp_m_freemode_01');
+	if (!HasModelLoaded(modelHash)) {
+		RequestModel(modelHash);
+		while (!HasModelLoaded(modelHash)) await Delay(100);
+	}
+	SetPlayerModel(playerId, modelHash);
+	await Delay(200);
+	SetModelAsNoLongerNeeded(modelHash);
+
+	ped = PlayerPedId();
+	SetEntityRotation(ped, config.greenScreenRotation.x, config.greenScreenRotation.y, config.greenScreenRotation.z, 0, false);
+	SetEntityCoordsNoOffset(ped, config.greenScreenPosition.x, config.greenScreenPosition.y, config.greenScreenPosition.z, false, false, false);
+	FreezeEntityPosition(ped, true);
+	SetPlayerControl(playerId, false);
+
+	await Delay(100);
+
+	const total = weaponNames.reduce((acc, w) => acc + (weaponComponents[w]?.length ?? 0), 0);
+	if (total > 0) SendNUIMessage({ start: true });
+
+	let done = 0;
+
+	for (const weaponName of weaponNames) {
+		const components = weaponComponents[weaponName];
+		if (!components || components.length === 0) continue;
+
+		const weaponHash = GetHashKey(weaponName);
+		if (!IsWeaponValid(weaponHash)) continue;
+
+		for (const componentName of components) {
+			RemoveAllPedWeapons(ped, true);
+			await Delay(100);
+
+			GiveWeaponToPed(ped, weaponHash, 999, false, true);
+			GiveWeaponComponentToPed(ped, weaponHash, GetHashKey(componentName));
+			SetCurrentPedWeapon(ped, weaponHash, true);
+
+			const [pedX, pedY, pedZ] = GetEntityCoords(ped);
+			const [fwdX, fwdY] = GetEntityForwardVector(ped);
+			TaskAimGunAtCoord(ped, pedX + fwdX * 100, pedY + fwdY * 100, pedZ, -1, true, false);
+
+			await Delay(1200);
+
+			done++;
+			SendNUIMessage({ type: `${weaponName} — ${componentName}`, value: done, max: total });
+
+			await takeScreenshotForWeaponComponent(ped, weaponName, componentName);
+		}
+	}
+
+	RemoveAllPedWeapons(ped, true);
+	FreezeEntityPosition(ped, false);
+	SetPlayerControl(playerId, true);
+
+	if (total > 0) SendNUIMessage({ end: true });
+
+	startWeatherResource();
+	DestroyAllCams(true);
+	DestroyCam(cam, true);
+	RenderScriptCams(false, false, 0, true, false, 0);
+	stopHidingHud();
+	cam = null;
+});
 
 setImmediate(() => {
 	emit('chat:addSuggestions', [
@@ -766,6 +1017,20 @@ setImmediate(() => {
 				{name:"primarycolor", help:"The primary vehicle color to take a screenshot of (optional) See: https://wiki.rage.mp/index.php?title=Vehicle_Colors"},
 				{name:"secondarycolor", help:"The secondary vehicle color to take a screenshot of (optional) See: https://wiki.rage.mp/index.php?title=Vehicle_Colors"},
 			]
+		},
+		{
+			name: '/screenshotweapons',
+			help: 'generate weapon prop screenshots (saved to images/weapons/)',
+			params: [
+				{name:"weapon/all", help:"Weapon name (e.g. weapon_pistol) or 'all' for every weapon in config"},
+			]
+		},
+		{
+			name: '/screenshotweaponcomponents',
+			help: 'generate weapon+component screenshots, ped holding each accessory (saved to images/weapon_components/)',
+			params: [
+				{name:"weapon/all", help:"Weapon name or 'all' for every weapon with components in config"},
+			]
 		}
 	])
   });
@@ -774,6 +1039,7 @@ on('onResourceStop', (resName) => {
 	if (GetCurrentResourceName() != resName) return;
 
 	startWeatherResource();
+	stopHidingHud();
 	clearInterval(interval);
 	SetPlayerControl(playerId, true);
 	FreezeEntityPosition(ped, false);
