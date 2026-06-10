@@ -10,6 +10,14 @@ let ped;
 let interval;
 let hudHideTick = null;
 const playerId = PlayerId();
+
+// Screenshot state machine
+let screenshotState = 'idle'; // 'idle' | 'running' | 'paused' | 'stopped'
+
+async function waitIfPaused() {
+	while (screenshotState === 'paused') await Delay(100);
+	return screenshotState !== 'stopped';
+}
 let QBCore = null;
 
 if (config.useQBVehicles) {
@@ -407,6 +415,7 @@ function createGreenScreenVehicle(vehicleHash, vehicleModel) {
 RegisterCommand('screenshot', async (source, args) => {
 	const gender = args[0]?.toLowerCase();
 	let modelHashes;
+	screenshotState = 'running';
 	if (gender === 'male') {
 		modelHashes = [GetHashKey('mp_m_freemode_01')];
 	} else if (gender === 'female') {
@@ -478,6 +487,7 @@ RegisterCommand('screenshot', async (source, args) => {
 								await LoadComponentVariation(ped, component, drawable);
 								await takeScreenshotForComponent(pedType, type, component, drawable);
 							}
+							if (!await waitIfPaused()) break;
 						}
 					} else if (type === 'PROPS') {
 						const propVariationCount = GetNumberOfPedPropDrawableVariations(ped, component);
@@ -498,21 +508,25 @@ RegisterCommand('screenshot', async (source, args) => {
 								await LoadPropVariation(ped, component, prop);
 								await takeScreenshotForComponent(pedType, type, component, prop);
 							}
+							if (!await waitIfPaused()) break;
 						}
 					}
+					if (screenshotState === 'stopped') break;
 				}
+				if (screenshotState === 'stopped') break;
 			}
 			SetModelAsNoLongerNeeded(modelHash);
 			SetPlayerControl(playerId, true);
 			FreezeEntityPosition(ped, false);
 			clearInterval(interval);
+			if (screenshotState === 'stopped') break;
 		}
 	}
+	const wasStopped = screenshotState === 'stopped';
+	screenshotState = 'idle';
 	SetPedOnGround();
 	startWeatherResource();
-	SendNUIMessage({
-		end: true,
-	});
+	SendNUIMessage(wasStopped ? { stopped: true } : { end: true });
 	DestroyAllCams(true);
 	DestroyCam(cam, true);
 	RenderScriptCams(false, false, 0, true, false, 0);
@@ -743,8 +757,8 @@ RegisterCommand('screenshotvehicle', async (source, args) => {
 	const primarycolor = args[1] ? parseInt(args[1]) : null;
 	const secondarycolor = args[2] ? parseInt(args[2]) : null;
 
-	if (!stopWeatherResource()) return;
-
+	screenshotState = 'running';
+	if (!stopWeatherResource()) { screenshotState = 'idle'; return; }
 
 	DisableIdleCamera(true);
 	startHidingHud();
@@ -790,6 +804,8 @@ RegisterCommand('screenshotvehicle', async (source, args) => {
 			FreezeEntityPosition(vehicle, true);
 
 			SetVehicleWindowTint(vehicle, 1);
+			SetVehicleDirtLevel(vehicle, 0.0);
+			WashDecalsFromVehicle(vehicle, 1.0);
 
 			if (primarycolor) SetVehicleColours(vehicle, primarycolor, secondarycolor || primarycolor);
 
@@ -799,10 +815,12 @@ RegisterCommand('screenshotvehicle', async (source, args) => {
 
 			DeleteEntity(vehicle);
 			SetModelAsNoLongerNeeded(vehicleHash);
+
+			if (!await waitIfPaused()) break;
 		}
-		SendNUIMessage({
-			end: true,
-		});
+		const wasStopped = screenshotState === 'stopped';
+		screenshotState = 'idle';
+		SendNUIMessage(wasStopped ? { stopped: true } : { end: true });
 	} else {
 		const vehicleModel = type;
 		const vehicleHash = GetHashKey(vehicleModel);
@@ -829,6 +847,8 @@ RegisterCommand('screenshotvehicle', async (source, args) => {
 			FreezeEntityPosition(vehicle, true);
 
 			SetVehicleWindowTint(vehicle, 1);
+			SetVehicleDirtLevel(vehicle, 0.0);
+			WashDecalsFromVehicle(vehicle, 1.0);
 
 			if (primarycolor) SetVehicleColours(vehicle, primarycolor, secondarycolor || primarycolor);
 
@@ -841,6 +861,7 @@ RegisterCommand('screenshotvehicle', async (source, args) => {
 		} else {
 			console.log('ERROR: Invalid vehicle model');
 		}
+		screenshotState = 'idle';
 	}
 	SetPlayerControl(playerId, true);
 	startWeatherResource();
@@ -857,7 +878,8 @@ RegisterCommand('screenshotweapons', async (source, args) => {
 	const target = args[0]?.toLowerCase() ?? 'all';
 	const weapons = target === 'all' ? config.weapons : [target];
 
-	if (!stopWeatherResource()) return;
+	screenshotState = 'running';
+	if (!stopWeatherResource()) { screenshotState = 'idle'; return; }
 
 	DisableIdleCamera(true);
 	startHidingHud();
@@ -898,9 +920,14 @@ RegisterCommand('screenshotweapons', async (source, args) => {
 
 		DeleteEntity(object);
 		SetModelAsNoLongerNeeded(modelHash);
+
+		if (!await waitIfPaused()) break;
 	}
 
-	if (weapons.length > 1) SendNUIMessage({ end: true });
+	const wasStopped = screenshotState === 'stopped';
+	screenshotState = 'idle';
+
+	if (weapons.length > 1) SendNUIMessage(wasStopped ? { stopped: true } : { end: true });
 
 	SetPlayerControl(playerId, true);
 	startWeatherResource();
@@ -916,7 +943,8 @@ RegisterCommand('screenshotweaponcomponents', async (source, args) => {
 	const weaponComponents = config.weaponComponents ?? {};
 	const weaponNames = target === 'all' ? Object.keys(weaponComponents) : [target];
 
-	if (!stopWeatherResource()) return;
+	screenshotState = 'running';
+	if (!stopWeatherResource()) { screenshotState = 'idle'; return; }
 
 	DisableIdleCamera(true);
 	startHidingHud();
@@ -968,14 +996,20 @@ RegisterCommand('screenshotweaponcomponents', async (source, args) => {
 			SendNUIMessage({ type: `${weaponName} — ${componentName}`, value: done, max: total });
 
 			await takeScreenshotForWeaponComponent(ped, weaponName, componentName);
+
+			if (!await waitIfPaused()) break;
 		}
+		if (screenshotState === 'stopped') break;
 	}
+
+	const wasStopped = screenshotState === 'stopped';
+	screenshotState = 'idle';
 
 	RemoveAllPedWeapons(ped, true);
 	FreezeEntityPosition(ped, false);
 	SetPlayerControl(playerId, true);
 
-	if (total > 0) SendNUIMessage({ end: true });
+	if (total > 0) SendNUIMessage(wasStopped ? { stopped: true } : { end: true });
 
 	startWeatherResource();
 	DestroyAllCams(true);
@@ -987,6 +1021,10 @@ RegisterCommand('screenshotweaponcomponents', async (source, args) => {
 
 setImmediate(() => {
 	emit('chat:addSuggestions', [
+		{
+			name: '/greenscreener',
+			help: 'ouvrir l\'interface WebUI du greenscreener',
+		},
 		{
 			name: '/screenshot',
 			help: 'generate clothing screenshots',
@@ -1034,6 +1072,86 @@ setImmediate(() => {
 		}
 	])
   });
+
+// ── Web UI ──────────────────────────────────────────────────────────────────
+
+RegisterCommand('greenscreener', () => {
+	SetNuiFocus(true, true);
+	SendNUIMessage({
+		uiAction: 'open',
+		resourceName: GetCurrentResourceName(),
+		weapons: config.weapons ?? [],
+		weaponComponents: Object.keys(config.weaponComponents ?? {}),
+	});
+}, false);
+
+RegisterNuiCallback('closeUI', (data, cb) => {
+	SetNuiFocus(false, false);
+	cb({});
+});
+
+RegisterNuiCallback('reopenUI', (data, cb) => {
+	SetNuiFocus(true, true);
+	cb({});
+});
+
+RegisterNuiCallback('releaseUI', (data, cb) => {
+	SetNuiFocus(false, false);
+	cb({});
+});
+
+RegisterNuiCallback('pauseScreenshots', (data, cb) => {
+	if (screenshotState === 'running') screenshotState = 'paused';
+	cb({});
+});
+
+RegisterNuiCallback('resumeScreenshots', (data, cb) => {
+	if (screenshotState === 'paused') screenshotState = 'running';
+	cb({});
+});
+
+RegisterNuiCallback('stopScreenshots', (data, cb) => {
+	screenshotState = 'stopped';
+	cb({});
+});
+
+RegisterNuiCallback('startScreenshots', (data, cb) => {
+	cb({});
+	screenshotState = 'running';
+	// NUI focus reste actif : la souris est capturée par le widget de progression
+
+	switch (data.category) {
+		case 'clothing':
+			if (data.mode === 'all') {
+				const gArg = data.gender && data.gender !== 'both' ? data.gender : '';
+				ExecuteCommand(('screenshot ' + gArg).trim());
+			} else {
+				const comp  = data.component ?? '1';
+				const draw  = data.drawable   ?? 'all';
+				const ctype = data.clothingType ?? 'clothing';
+				const gen   = data.gender ?? 'both';
+				ExecuteCommand(`customscreenshot ${comp} ${draw} ${ctype} ${gen}`);
+			}
+			break;
+		case 'vehicles': {
+			const model = (data.mode === 'specific' && data.model) ? data.model : 'all';
+			const parts = [model];
+			if (data.color1 !== undefined && data.color1 !== '') parts.push(data.color1);
+			if (data.color2 !== undefined && data.color2 !== '') parts.push(data.color2);
+			ExecuteCommand(`screenshotvehicle ${parts.join(' ')}`);
+			break;
+		}
+		case 'weapons':
+			ExecuteCommand(`screenshotweapons ${(data.mode === 'specific' && data.weapon) ? data.weapon : 'all'}`);
+			break;
+		case 'weaponComponents':
+			ExecuteCommand(`screenshotweaponcomponents ${(data.mode === 'specific' && data.weapon) ? data.weapon : 'all'}`);
+			break;
+		case 'objects':
+			if (data.hash) ExecuteCommand(`screenshotobject ${data.hash}`);
+			break;
+	}
+});
 
 on('onResourceStop', (resName) => {
 	if (GetCurrentResourceName() != resName) return;

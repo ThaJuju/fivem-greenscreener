@@ -1,17 +1,225 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="style.css" type="text/css">
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
-    <script src="nui://game/ui/jquery.js" type="text/javascript"></script>
-    <script src="script.js"></script>
-    <title>Progress</title>
+    <link rel="stylesheet" href="style.css">
+    <title>Greenscreener</title>
 </head>
 <body>
-    <div id="container" style="display: none;">
-        <p id="text">Progress 0/10 Masks</p>
+    <div id="overlay">
+        <div id="panel">
+            <div id="sidebar">
+                <div class="sidebar-logo">SCREENER</div>
+                <nav id="tabs">
+                    <button class="tab active" data-tab="clothing">
+                        <span class="tab-icon">◈</span>
+                        <span>Vêtements</span>
+                    </button>
+                    <button class="tab" data-tab="vehicles">
+                        <span class="tab-icon">◈</span>
+                        <span>Véhicules</span>
+                    </button>
+                    <button class="tab" data-tab="weapons">
+                        <span class="tab-icon">◈</span>
+                        <span>Armes</span>
+                    </button>
+                    <button class="tab" data-tab="weaponComponents">
+                        <span class="tab-icon">◈</span>
+                        <span>Accessoires</span>
+                    </button>
+                    <button class="tab" data-tab="objects">
+                        <span class="tab-icon">◈</span>
+                        <span>Objets</span>
+                    </button>
+                </nav>
+            </div>
+
+            <div id="main">
+                <div id="header">
+                    <h2 id="header-title">Vêtements</h2>
+                    <button id="close-btn" title="Fermer (ESC)">✕</button>
+                </div>
+
+                <div id="content">
+
+                    <!-- VÊTEMENTS -->
+                    <div class="tab-panel active" id="panel-clothing">
+                        <div class="section">
+                            <div class="section-label">Mode</div>
+                            <div class="radio-row">
+                                <label class="radio-option">
+                                    <input type="radio" name="clothing-mode" value="all" checked>
+                                    <span>Tout screenshotter</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="clothing-mode" value="custom">
+                                    <span>Personnalisé</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="section">
+                            <div class="section-label">Genre</div>
+                            <div class="radio-row">
+                                <label class="radio-option">
+                                    <input type="radio" name="clothing-gender" value="both" checked>
+                                    <span>Les deux</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="clothing-gender" value="male">
+                                    <span>Homme</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="clothing-gender" value="female">
+                                    <span>Femme</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="section disabled" id="clothing-custom-fields">
+                            <div class="section-label">Options personnalisées</div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="clothing-type">Type</label>
+                                    <select id="clothing-type">
+                                        <option value="clothing">Vêtements</option>
+                                        <option value="props">Props</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="clothing-component">Composant</label>
+                                    <select id="clothing-component"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="clothing-drawable">Drawable</label>
+                                    <input type="text" id="clothing-drawable" value="all" placeholder="all ou numéro">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- VÉHICULES -->
+                    <div class="tab-panel" id="panel-vehicles">
+                        <div class="section">
+                            <div class="section-label">Mode</div>
+                            <div class="radio-row">
+                                <label class="radio-option">
+                                    <input type="radio" name="vehicle-mode" value="all" checked>
+                                    <span>Tous les véhicules</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="vehicle-mode" value="specific">
+                                    <span>Véhicule spécifique</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="section disabled" id="vehicle-specific-fields">
+                            <div class="section-label">Modèle</div>
+                            <div class="form-group">
+                                <input type="text" id="vehicle-model" placeholder="ex: zentorno, adder, t20...">
+                            </div>
+                        </div>
+
+                        <div class="section" id="vehicle-colors-section">
+                            <div class="section-label">Couleurs <span class="badge">— optionnel</span></div>
+                            <div class="color-targets">
+                                <button class="color-target-btn active" data-target="primary">
+                                    <span class="color-target-swatch" id="swatch-primary"></span>
+                                    <span>Principale : <b id="label-primary">Aucune</b></span>
+                                </button>
+                                <button class="color-target-btn" data-target="secondary">
+                                    <span class="color-target-swatch" id="swatch-secondary"></span>
+                                    <span>Secondaire : <b id="label-secondary">Aucune</b></span>
+                                </button>
+                                <button class="color-clear-btn" id="color-clear">Effacer</button>
+                            </div>
+                            <div id="color-palette"></div>
+                        </div>
+                    </div>
+
+                    <!-- ARMES -->
+                    <div class="tab-panel" id="panel-weapons">
+                        <div class="section">
+                            <div class="section-label">Mode</div>
+                            <div class="radio-row">
+                                <label class="radio-option">
+                                    <input type="radio" name="weapon-mode" value="all" checked>
+                                    <span>Toutes les armes</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="weapon-mode" value="specific">
+                                    <span>Arme spécifique</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="section disabled" id="weapon-specific-fields">
+                            <div class="section-label">Arme</div>
+                            <div class="form-group">
+                                <select id="weapon-select"></select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ACCESSOIRES ARMES -->
+                    <div class="tab-panel" id="panel-weaponComponents">
+                        <div class="section">
+                            <div class="section-label">Mode</div>
+                            <div class="radio-row">
+                                <label class="radio-option">
+                                    <input type="radio" name="wcomp-mode" value="all" checked>
+                                    <span>Tous les accessoires</span>
+                                </label>
+                                <label class="radio-option">
+                                    <input type="radio" name="wcomp-mode" value="specific">
+                                    <span>Par arme</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="section disabled" id="wcomp-specific-fields">
+                            <div class="section-label">Arme</div>
+                            <div class="form-group">
+                                <select id="wcomp-weapon-select"></select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- OBJETS -->
+                    <div class="tab-panel" id="panel-objects">
+                        <div class="section">
+                            <div class="section-label">Hash de l'objet</div>
+                            <div class="form-group">
+                                <input type="text" id="object-hash" placeholder="ex: 2240524752">
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <div id="footer">
+                    <span id="footer-hint">ESC pour fermer</span>
+                    <button id="start-btn">Lancer</button>
+                </div>
+            </div>
+        </div>
     </div>
+
+    <!-- Widget de progression flottant (visible pendant les screenshots) -->
+    <div id="progress-widget">
+        <div id="pw-top">
+            <span id="pw-label">Initialisation…</span>
+            <span id="pw-count">—</span>
+        </div>
+        <div id="pw-bar-wrap"><div id="pw-bar"></div></div>
+        <div id="pw-controls">
+            <button id="pw-pause">Pause</button>
+            <button id="pw-resume" class="hidden">Reprendre</button>
+            <button id="pw-stop">Arrêter</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
 </body>
 </html>

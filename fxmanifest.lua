@@ -1,7 +1,8 @@
 fx_version 'cerulean'
 game 'gta5'
 
-author 'Ben'
+author 'Juju'
+--author 'Ben' -- not working with screenshot-basic, needs to be fixed
 description 'fivem-greenscreener'
 version '1.6.6'
 
