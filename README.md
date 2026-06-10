@@ -47,8 +47,7 @@ Simply clone the repository and place the resource in your resources folder.
 Open the interface with `/greenscreener`. All screenshot options are available from there.
 The panel lets you select a category, configure options, then launch. A progress widget appears during the process with **Pause**, **Resume** and **Stop** controls.
 
-<a href="https://imgur.com/JnaQZkM"><img src="https://i.imgur.com/JnaQZkM.png" width="200"></a> 
-<a href="https://imgur.com/phBMuHd"><img src="https://i.imgur.com/phBMuHd.png" width="200"></a>
+<a href="https://imgur.com/JnaQZkM"><img src="https://i.imgur.com/JnaQZkM.png" width="49%"></a> <a href="https://imgur.com/phBMuHd"><img src="https://i.imgur.com/phBMuHd.png" width="49%"></a>
 
 ---
 
